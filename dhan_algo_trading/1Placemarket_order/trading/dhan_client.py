@@ -146,6 +146,9 @@ class DhanClient:
         self.broker = broker if broker is not None else self._build_broker()
 
     def _build_broker(self) -> Any:
+        from utils.compat import ensure_dhanhq_importable
+
+        ensure_dhanhq_importable()
         from Dhan_SRP import Dhansrp
 
         logger.info("Market data connection established")

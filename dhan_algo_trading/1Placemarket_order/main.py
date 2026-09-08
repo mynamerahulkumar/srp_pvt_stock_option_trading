@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from trading.session import TradingSession
+from utils.compat import DhanhqCompatError, ensure_dhanhq_importable
 from utils.config import ConfigError, load_config
 from utils.env import EnvError, load_project_env
 from utils.logging import get_logger, setup_logging
@@ -29,8 +30,9 @@ def main(argv: list[str] | None = None) -> int:
     logger = get_logger()
     try:
         load_project_env(ROOT)
+        ensure_dhanhq_importable()
         config = load_config(args.config, symbol=args.symbol, dry_run=args.dry_run)
-    except (ConfigError, EnvError) as exc:
+    except (ConfigError, EnvError, DhanhqCompatError) as exc:
         logger.error("%s", exc)
         return 1
     logger.info("Configuration loaded")
