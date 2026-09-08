@@ -441,8 +441,8 @@ Thumbs.db
 **/*.xlsx
 **/*.json
 **/*.xml
-**/*.yaml
-**/*.yml
+
+
 # Document Files
 **/*.pdf
 **/*.doc

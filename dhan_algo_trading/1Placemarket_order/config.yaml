@@ -1,0 +1,28 @@
+trading:
+  default_symbol: HDFCBANK
+  quantity: 1
+  transaction_type: BUY
+  order_type: MARKET
+  product_type: CNC
+
+  polling:
+    interval_seconds: 5
+
+  risk:
+    take_profit_percent: 2.0
+    stop_loss_percent: 1.0
+    # Optional absolute prices (override percent mode when set):
+    # take_profit_price: 2000.0
+    # stop_loss_price: 1900.0
+
+instruments:
+  HDFCBANK:
+    exchange_segment: NSE_EQ
+    security_id: "1333"
+    instrument_id: "1333"
+
+  # Future examples:
+  # RELIANCE:
+  #   exchange_segment: NSE_EQ
+  #   security_id: "2885"
+  #   instrument_id: "2885"
