@@ -44,6 +44,14 @@ def _as_positive_number(value: Any, field_name: str, integer: bool = False) -> f
     return number
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "live"}
+
+
 def _as_non_empty_id(value: Any, field_name: str) -> str:
     text = str(value).strip() if value is not None else ""
     if text in PLACEHOLDER_IDS:
@@ -113,10 +121,13 @@ def validate_and_build(
     transaction_type = str(trading.get("transaction_type", "BUY")).upper().strip()
     order_type = str(trading.get("order_type", "MARKET")).upper().strip()
     product_type = str(trading.get("product_type", "CNC")).upper().strip()
+    live = _as_bool(trading.get("live"), default=False)
     if transaction_type not in {"BUY", "SELL"}:
         raise ConfigError(f"Invalid transaction_type: {transaction_type}")
     if order_type not in {"MARKET", "LIMIT"}:
         raise ConfigError(f"Invalid order_type: {order_type}")
+
+    effective_dry_run = True if dry_run else (not live)
 
     return TradingConfig(
         default_symbol=default_symbol,
@@ -137,7 +148,8 @@ def validate_and_build(
             security_id=security_id,
             instrument_id=instrument_id,
         ),
-        dry_run=bool(dry_run),
+        live=live and not effective_dry_run,
+        dry_run=effective_dry_run,
     )
 
 

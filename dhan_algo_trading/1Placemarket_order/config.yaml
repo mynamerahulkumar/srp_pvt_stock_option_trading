@@ -1,5 +1,6 @@
 trading:
   default_symbol: HDFCBANK
+  live: true
   quantity: 1
   transaction_type: BUY
   order_type: MARKET

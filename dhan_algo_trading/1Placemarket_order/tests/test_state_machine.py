@@ -105,3 +105,18 @@ def test_uses_average_traded_price_not_ltp_as_entry():
     session.tick()
     assert session.entry_price == 997.5
     assert session.risk_snapshot.take_profit_price == pytest.approx(1017.45)
+
+
+def test_live_mode_skips_confirmation_and_uses_config_security_id():
+    client = FakeDhanClient(ltp=1000.0)
+    session = make_session(client)
+    session.confirm_fn = lambda: (_ for _ in ()).throw(AssertionError("live mode must not prompt"))
+    assert session.config.live is True
+    assert session.config.dry_run is False
+    assert session.config.instrument.security_id == "1333"
+    session._ensure_services()
+    session._refresh_market()
+    session.submit_entry()
+    assert client.place_calls
+    assert client.place_calls[0]["security_id"] == "1333"
+    assert client.place_calls[0]["transaction_type"] == "BUY"

@@ -15,6 +15,7 @@ def sample_raw_config() -> dict:
             "transaction_type": "BUY",
             "order_type": "MARKET",
             "product_type": "CNC",
+            "live": True,
             "polling": {"interval_seconds": 5},
             "risk": {"take_profit_percent": 2.0, "stop_loss_percent": 1.0},
         },

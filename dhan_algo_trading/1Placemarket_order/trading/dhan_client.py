@@ -150,9 +150,16 @@ class DhanClient:
 
         ensure_dhanhq_importable()
         from Dhan_SRP import Dhansrp
+        import pandas as pd
+
+        class ConfigDrivenDhansrp(Dhansrp):
+            def get_instrument_file(self):
+                logger.info("Using security_id from config.yaml; skipping security master CSV")
+                self.instrument_df = pd.DataFrame()
+                return self.instrument_df
 
         logger.info("Market data connection established")
-        return Dhansrp()
+        return ConfigDrivenDhansrp()
 
     def get_ltp(self, security_id: str, exchange_segment: str) -> Optional[float]:
         instruments = {
@@ -185,13 +192,14 @@ class DhanClient:
     ) -> dict[str, Any]:
         return self.broker.place_order(
             symbol=symbol,
-            security_id=security_id,
+            security_id=str(security_id),
             exchange_segment=exchange_segment,
             transaction_type=transaction_type,
             quantity=quantity,
             order_type="MARKET",
             product_type=product_type,
             price=0,
+            lot_size=1,
             dry_run=dry_run,
         )
 

@@ -358,21 +358,14 @@ class TradingSession:
         self._ensure_services()
         logger.info("Configuration loaded")
         logger.info("%s selected", self.config.instrument.symbol)
-        try:
-            resolved = self.client.resolve_symbol(
-                self.config.instrument.symbol, self.config.instrument.exchange_segment
-            )
-            if resolved and str(resolved.get("security_id")) != str(self.config.instrument.security_id):
-                logger.warning(
-                    "Configured security_id %s differs from security master %s",
-                    self.config.instrument.security_id,
-                    resolved.get("security_id"),
-                )
-        except Exception as exc:
-            logger.warning("Instrument lookup skipped: %s", exc)
+        logger.info("Security ID %s from config.yaml", self.config.instrument.security_id)
+        if self.config.live:
+            logger.info("LIVE mode — placing MARKET BUY without confirmation")
+        else:
+            logger.info("DRY-RUN mode")
 
         self._refresh_market()
-        if interactive:
+        if interactive and self.config.dry_run:
             if not self._confirm():
                 logger.info("Order cancelled by user")
                 return self.build_dashboard_state()

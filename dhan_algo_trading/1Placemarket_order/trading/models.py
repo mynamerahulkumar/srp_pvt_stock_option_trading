@@ -71,6 +71,7 @@ class TradingConfig:
     polling_interval_seconds: float
     risk: RiskConfig
     instrument: InstrumentConfig
+    live: bool = False
     dry_run: bool = False
 
 

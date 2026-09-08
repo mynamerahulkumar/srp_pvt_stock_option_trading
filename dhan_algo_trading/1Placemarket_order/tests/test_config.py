@@ -51,6 +51,31 @@ def test_invalid_polling_interval():
         validate_and_build(raw)
 
 
+def test_live_flag_places_without_dry_run():
+    raw = deepcopy(sample_raw_config())
+    raw["trading"]["live"] = True
+    config = validate_and_build(raw)
+    assert config.live is True
+    assert config.dry_run is False
+    assert config.instrument.security_id == "1333"
+
+
+def test_live_false_is_dry_run():
+    raw = deepcopy(sample_raw_config())
+    raw["trading"]["live"] = False
+    config = validate_and_build(raw)
+    assert config.live is False
+    assert config.dry_run is True
+
+
+def test_cli_dry_run_overrides_live():
+    raw = deepcopy(sample_raw_config())
+    raw["trading"]["live"] = True
+    config = validate_and_build(raw, dry_run=True)
+    assert config.dry_run is True
+    assert config.live is False
+
+
 def test_unknown_symbol():
     with pytest.raises(ConfigError, match="RELIANCE"):
         validate_and_build(sample_raw_config(), symbol="RELIANCE")

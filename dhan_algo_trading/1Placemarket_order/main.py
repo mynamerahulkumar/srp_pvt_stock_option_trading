@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     logger.info("Configuration loaded")
     logger.info("%s selected", config.instrument.symbol)
+    logger.info("Mode: %s | security_id=%s", "LIVE" if config.live else "DRY-RUN", config.instrument.security_id)
     session = TradingSession(config)
     session.run(interactive=True)
     return 0
