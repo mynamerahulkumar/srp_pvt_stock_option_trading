@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional, Protocol
 
-from trading.dhan_client import DhanClientError, extract_order_id, parse_order_payload
+from trading.dhan_client import DhanClientError, extract_order_id, format_dhan_error, parse_order_payload
 from trading.models import OrderSnapshot
 from utils.logging import get_logger
 
@@ -73,8 +73,9 @@ class OrderManager:
         if validation and not validation.get("valid", True):
             errors = "; ".join(validation.get("errors") or ["validation failed"])
             raise DhanClientError(errors)
-        if result.get("status") == "failure":
-            raise DhanClientError(str(result.get("validation") or result))
+        inner = result.get("response") if isinstance(result.get("response"), dict) else result
+        if str((inner or {}).get("status", result.get("status", ""))).lower() == "failure":
+            raise DhanClientError(format_dhan_error(inner or result))
 
         order_id = extract_order_id(result)
         response = result.get("response") or {}
@@ -137,6 +138,10 @@ class OrderManager:
             self.exit_submitted = False
             errors = "; ".join(validation.get("errors") or ["validation failed"])
             raise DhanClientError(errors)
+        inner = result.get("response") if isinstance(result.get("response"), dict) else result
+        if str((inner or {}).get("status", result.get("status", ""))).lower() == "failure":
+            self.exit_submitted = False
+            raise DhanClientError(format_dhan_error(inner or result))
         snapshot = OrderSnapshot(
             order_id=extract_order_id(result),
             status="PENDING",

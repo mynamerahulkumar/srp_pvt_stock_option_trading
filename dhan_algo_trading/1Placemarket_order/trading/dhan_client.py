@@ -28,13 +28,30 @@ def _as_int(value: Any) -> int:
         return 0
 
 
+def format_dhan_error(response: Any) -> str:
+    if not isinstance(response, dict):
+        return str(response)
+    remarks = response.get("remarks")
+    if isinstance(remarks, dict):
+        code = remarks.get("error_code")
+        message = remarks.get("error_message") or remarks.get("error_type")
+        if code or message:
+            return f"{code or 'DHAN'}: {message or 'request failed'}"
+        return (
+            "Dhan API returned failure with no error details. "
+            "Check access token, static IP whitelist, Data API plan, and market hours."
+        )
+    if remarks:
+        return str(remarks)
+    return str(response)
+
+
 def unwrap_sdk(response: Any) -> Any:
     if not isinstance(response, dict):
         return response
     status = str(response.get("status", "")).lower()
     if status == "failure":
-        remarks = response.get("remarks") or response
-        raise DhanClientError(f"Dhan API failure: {remarks}")
+        raise DhanClientError(format_dhan_error(response))
     if "data" in response:
         return response["data"]
     return response
@@ -118,7 +135,12 @@ def parse_position_payload(data: Any, security_id: str) -> PositionSnapshot:
 
 
 def extract_ltp(ticker_response: Any, security_id: str) -> Optional[float]:
-    payload = unwrap_sdk(ticker_response)
+    payload = ticker_response
+    if isinstance(payload, dict) and payload.get("status") != "failure":
+        if "data" in payload:
+            payload = payload.get("data")
+    elif isinstance(payload, dict) and "data" in payload:
+        payload = payload.get("data")
     if isinstance(payload, dict) and "data" in payload and isinstance(payload["data"], dict):
         payload = payload["data"]
     if not isinstance(payload, dict):
@@ -131,7 +153,12 @@ def extract_ltp(ticker_response: Any, security_id: str) -> Optional[float]:
             if str(key) != target:
                 continue
             if isinstance(values, dict):
-                price = _as_float(values.get("last_price") or values.get("ltp") or values.get("lastPrice"))
+                price = _as_float(
+                    values.get("last_price")
+                    or values.get("ltp")
+                    or values.get("lastPrice")
+                    or (values.get("ohlc") or {}).get("close")
+                )
                 if price is not None:
                     return price
             else:
@@ -155,30 +182,52 @@ class DhanClient:
         class ConfigDrivenDhansrp(Dhansrp):
             def get_instrument_file(self):
                 logger.info("Using security_id from config.yaml; skipping security master CSV")
-                self.instrument_df = pd.DataFrame()
+                self.instrument_df = pd.DataFrame(
+                    columns=[
+                        "SEM_TRADING_SYMBOL",
+                        "SEM_CUSTOM_SYMBOL",
+                        "SEM_EXM_EXCH_ID",
+                        "SEM_SMST_SECURITY_ID",
+                        "SEM_INSTRUMENT_NAME",
+                        "SEM_EXPIRY_CODE",
+                        "SEM_LOT_UNITS",
+                        "SEM_TICK_SIZE",
+                        "SEM_EXPIRY_DATE",
+                        "SEM_STRIKE_PRICE",
+                        "SEM_OPTION_TYPE",
+                        "SM_SYMBOL_NAME",
+                    ]
+                )
                 return self.instrument_df
+
+            def get_start_date(self):
+                import datetime as dt
+
+                to_date = dt.datetime.now().strftime("%Y-%m-%d")
+                start_date = (dt.datetime.now() - dt.timedelta(days=5)).strftime("%Y-%m-%d")
+                return start_date, to_date
 
         logger.info("Market data connection established")
         return ConfigDrivenDhansrp()
 
     def get_ltp(self, security_id: str, exchange_segment: str) -> Optional[float]:
-        instruments = {
-            "NSE_EQ": [],
-            "IDX_I": [],
-            "NSE_FNO": [],
-            "NSE_CURRENCY": [],
-            "BSE_EQ": [],
-            "BSE_FNO": [],
-            "BSE_CURRENCY": [],
-            "MCX_COMM": [],
-        }
-        instruments.setdefault(exchange_segment, [])
-        instruments[exchange_segment].append(int(security_id))
-        response = self.broker.Dhan.ticker_data(instruments)
-        price = extract_ltp(response, security_id)
-        if price is None:
-            raise DhanClientError(f"Missing market price for security_id {security_id}")
-        return price
+        instruments = {exchange_segment: [int(security_id)]}
+        last_error = None
+        for method_name in ("ticker_data", "ohlc_data", "quote_data"):
+            method = getattr(self.broker.Dhan, method_name, None)
+            if method is None:
+                continue
+            try:
+                response = method(instruments)
+            except Exception as exc:
+                last_error = str(exc)
+                continue
+            price = extract_ltp(response, security_id)
+            if price is not None:
+                return price
+            if isinstance(response, dict) and str(response.get("status", "")).lower() == "failure":
+                last_error = format_dhan_error(response)
+        raise DhanClientError(last_error or f"Missing market price for security_id {security_id}")
 
     def place_market_order(
         self,
@@ -190,21 +239,58 @@ class DhanClient:
         product_type: str,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        return self.broker.place_order(
-            symbol=symbol,
-            security_id=str(security_id),
-            exchange_segment=exchange_segment,
-            transaction_type=transaction_type,
-            quantity=quantity,
-            order_type="MARKET",
-            product_type=product_type,
-            price=0,
-            lot_size=1,
-            dry_run=dry_run,
-        )
+        if dry_run:
+            return self.broker.place_order(
+                symbol=symbol,
+                security_id=str(security_id),
+                exchange_segment=exchange_segment,
+                transaction_type=transaction_type,
+                quantity=quantity,
+                order_type="MARKET",
+                product_type=product_type,
+                price=0,
+                lot_size=1,
+                dry_run=True,
+            )
+        dhan = self.broker.Dhan
+        payload = {
+            "security_id": str(security_id),
+            "exchange_segment": self.broker._sdk_exchange_segment(exchange_segment),
+            "transaction_type": self.broker._sdk_transaction_type(transaction_type),
+            "quantity": int(quantity),
+            "order_type": self.broker._sdk_order_type("MARKET"),
+            "product_type": self.broker._sdk_product_type(product_type),
+            "price": 0,
+            "trigger_price": 0,
+        }
+        logger.info("Placing MARKET %s %s security_id=%s qty=%s", transaction_type, symbol, security_id, quantity)
+        try:
+            response = dhan.place_order(**payload)
+        except TypeError:
+            response = dhan.place_order(
+                payload["security_id"],
+                payload["exchange_segment"],
+                payload["transaction_type"],
+                payload["quantity"],
+                payload["order_type"],
+                payload["product_type"],
+                payload["price"],
+            )
+        if not isinstance(response, dict):
+            raise DhanClientError(f"Unexpected place_order response: {response}")
+        return {
+            "status": response.get("status") if isinstance(response, dict) else "unknown",
+            "instrument": {"security_id": str(security_id), "trading_symbol": symbol, "exchange_segment": exchange_segment},
+            "validation": {"valid": True, "errors": [], "warnings": []},
+            "response": response,
+        }
 
     def get_order(self, order_id: str) -> OrderSnapshot:
-        response = self.broker.Dhan.get_order_by_id(order_id=order_id)
+        getter = self.broker.Dhan.get_order_by_id
+        try:
+            response = getter(order_id=order_id)
+        except TypeError:
+            response = getter(order_id)
         data = unwrap_sdk(response)
         return parse_order_payload(data)
 
