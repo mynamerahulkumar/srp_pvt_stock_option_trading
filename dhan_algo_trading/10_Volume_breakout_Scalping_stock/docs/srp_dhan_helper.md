@@ -2,20 +2,22 @@
 
 Portable reference for using `Dhan_SRP.py` as a single broker/data layer in any algo repo.
 
-**Module version:** 2.8  
+**Module version:** 2.9  
 **Class:** `Dhansrp`  
 **Source file:** `Dhan_SRP.py`
+
+Copy **only these two files** into another Dhan algo repo. Do not copy this CLI, YAML, or secrets.
 
 ---
 
 ## What This File Is For
 
-Copy `Dhan_SRP.py` (and optionally this guide) into another repo and import `Dhansrp` from your algo scripts. Keep all Dhan login, instrument lookup, market data, validation, margin checks, and order placement inside this module. Your algo files should only contain signal logic, risk rules, and orchestration.
+Copy `Dhan_SRP.py` and this guide into another repo and import `Dhansrp` from your algo scripts. Keep all Dhan login, instrument lookup, market data, validation, margin checks, and order placement inside this module. Your algo files should only contain signal logic, risk rules, and orchestration.
 
 `Dhan_SRP.py` handles:
 
-- Dhan login and SDK client setup
-- Security master / instrument file loading and caching
+- Dhan login and SDK client setup (optional `.env` via python-dotenv)
+- Security master skip (`skip_instrument_master=True`) or CSV download / cache
 - Symbol and derivative contract resolution
 - Order preview, validation, and placement (`dry_run` supported)
 - Stock and option order helpers
@@ -35,9 +37,10 @@ Copy `Dhan_SRP.py` (and optionally this guide) into another repo and import `Dha
 
 | File | Required | Notes |
 |------|----------|-------|
-| `Dhan_SRP.py` | Yes | Single portable module |
-| `srp_dhan_helper.md` | Optional | This reference |
-| `security_id/api-scrip-master.csv` | Optional | Local cache; module can also fetch from Dhan |
+| `Dhan_SRP.py` | Yes | Single portable module (v2.9) |
+| `srp_dhan_helper.md` | Yes | This reference |
+
+Do **not** copy `.env`, access tokens, `config.yaml`, or this bot’s CLI. Put instrument IDs in *your* algo config, not in Python.
 
 ### Suggested folder layout
 
@@ -48,10 +51,8 @@ my_algo_repo/
     straddle.py
   broker/
     Dhan_SRP.py
-    security_id/
-      api-scrip-master.csv    # optional local instrument cache
-  config/
-    dhan_config.json          # credentials (do not commit)
+    srp_dhan_helper.md
+  .env                      # DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN (do not commit)
   requirements.txt
 ```
 
@@ -69,40 +70,49 @@ from Dhan_SRP import Dhansrp
 
 ### Dependencies
 
-Minimum packages for `Dhan_SRP.py`:
+On **Python 3.9** pin `dhanhq==2.0.2`. dhanhq 2.2+ uses `match`/`case` and needs Python 3.10+.
 
 ```bash
-pip install dhanhq pandas numpy requests pytz mibian
+pip install 'dhanhq==2.0.2' pandas numpy requests pytz mibian python-dotenv
 ```
 
 Recommended `requirements.txt` snippet:
 
 ```text
-dhanhq
+dhanhq==2.0.2
 pandas
 numpy
 requests
 pytz
 mibian
+python-dotenv
 ```
 
-If your installed `dhanhq` SDK exposes `DhanContext`, `MarketFeed`, and `OrderUpdate`, the advanced feed helpers will work. Older SDK versions still work for REST order and data calls.
+`python-dotenv` is optional. If it is missing, constructor args, already-exported env vars, and JSON `config.json` still work.
+
+If your installed `dhanhq` SDK exposes `DhanContext`, `MarketFeed`, and `OrderUpdate`, the advanced feed helpers will work. 2.0.2 still works for REST order and data calls. `fetch_security_list('compact')` raises `AttributeError` on 2.0.2; v2.9 catches that and falls back to `https://images.dhan.co/api-data/api-scrip-master.csv` **only when not skipping** the master.
 
 ### First-run checklist (new repo)
 
-1. Copy `Dhan_SRP.py` into `broker/` (or repo root).
-2. Install dependencies in a virtualenv.
-3. Set credentials (env vars, JSON config, or constructor args).
-4. Initialize with `dry_run=True` and confirm login succeeds.
-5. Run one `resolve_symbol()` or `get_option_chain_snapshot()` call.
-6. Run one `prepare_equity_limit_order()` or `place_stock_order(dry_run=True)`.
-7. Only then switch to `dry_run=False` for live orders.
+1. Copy `Dhan_SRP.py` and this markdown into `broker/` (or repo root).
+2. Install pinned dependencies in a virtualenv (`dhanhq==2.0.2` on Python 3.9).
+3. Put credentials in `.env` next to the module or in the cwd. Never log tokens.
+4. Equity with IDs in *your* config: `Dhansrp(skip_instrument_master=True)` then `place_order(..., security_id=..., lot_size=1, dry_run=True)`.
+5. Options / symbol lookup: `Dhansrp()` (default) then one `resolve_symbol()` or `get_option_chain_snapshot()`.
+6. Only then switch to `dry_run=False` for live orders.
 
 ---
 
 ## Credentials
 
-`Dhansrp` resolves credentials in this priority order:
+Prefer a `.env` file. Never put tokens in YAML, Python, git, or logs.
+
+If python-dotenv is installed, `_resolve_credentials()` loads:
+
+1. `.env` next to `Dhan_SRP.py`
+2. `.env` in the current working directory
+
+Then it resolves credentials in this order:
 
 1. Constructor args: `ClientCode`, `token_id`
 2. Environment variables: `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN`
@@ -112,15 +122,20 @@ If your installed `dhanhq` SDK exposes `DhanContext`, `MarketFeed`, and `OrderUp
    - `DHAN_CONFIG_PATH` env var
    - `config.json` in the working directory
 
-### Option 1 — Direct credentials
+### Option 1 — `.env` (preferred)
+
+```text
+DHAN_CLIENT_ID=
+DHAN_ACCESS_TOKEN=
+```
 
 ```python
 from broker.Dhan_SRP import Dhansrp
 
-dhan = Dhansrp(ClientCode="YOUR_CLIENT_ID", token_id="YOUR_ACCESS_TOKEN")
+dhan = Dhansrp()  # loads sibling or cwd .env when python-dotenv is installed
 ```
 
-### Option 2 — Environment variables
+### Option 2 — Already-exported environment variables
 
 ```bash
 export DHAN_CLIENT_ID="YOUR_CLIENT_ID"
@@ -128,14 +143,20 @@ export DHAN_ACCESS_TOKEN="YOUR_ACCESS_TOKEN"
 ```
 
 ```python
-from broker.Dhan_SRP import Dhansrp
-
 dhan = Dhansrp()
 ```
 
-### Option 3 — JSON config file
+### Option 3 — Direct credentials
 
-`Dhan_SRP.py` reads **JSON only** (not YAML). Top-level keys:
+```python
+from broker.Dhan_SRP import Dhansrp
+
+dhan = Dhansrp(ClientCode="YOUR_CLIENT_ID", token_id="YOUR_ACCESS_TOKEN")
+```
+
+### Option 4 — JSON config file
+
+`Dhan_SRP.py` reads **JSON only** (not YAML) for credentials. Top-level keys:
 
 ```json
 {
@@ -150,10 +171,7 @@ Alternate key names also work: `ClientCode`, `token_id`.
 dhan = Dhansrp(config_path="config/dhan_config.json")
 ```
 
-If your main app uses YAML (e.g. `config/config.yaml`), either:
-
-- export `DHAN_CLIENT_ID` / `DHAN_ACCESS_TOKEN` from your loader, or
-- pass `ClientCode` and `token_id` from your YAML loader into `Dhansrp(...)`.
+If your main app uses YAML, keep secrets out of YAML: load `.env` yourself, or pass `ClientCode` / `token_id` from a secret store into `Dhansrp(...)`. Instrument IDs may live in YAML; credentials must not.
 
 ---
 
@@ -167,6 +185,7 @@ Dhansrp(
     enable_file_logging: bool = False,
     instrument_cache_path: str = None,
     persist_instrument_file: bool = False,
+    skip_instrument_master: bool = False,
 )
 ```
 
@@ -175,27 +194,49 @@ Dhansrp(
 | `ClientCode` / `token_id` | Direct Dhan credentials |
 | `config_path` | Path to JSON credentials file |
 | `enable_file_logging` | Write logs under `Dependencies/log_files/` next to `Dhan_SRP.py` |
-| `instrument_cache_path` | Use a fixed CSV path for the security master (avoids re-download) |
+| `instrument_cache_path` | Use a fixed CSV path for the security master (options algos) |
 | `persist_instrument_file` | Save downloaded master to `Dependencies/all_instrument.csv` |
+| `skip_instrument_master` | `True` when `security_id` already comes from *your* config (no CSV download) |
 
-### Recommended init for portable algos
+### Two init paths
+
+**Equity with IDs already in your config** (no security-master CSV):
+
+```python
+from broker.Dhan_SRP import Dhansrp
+
+dhan = Dhansrp(skip_instrument_master=True)
+
+result = dhan.place_order(
+    security_id=str(config["security_id"]),  # e.g. HDFCBANK "1333" from YAML, not hard-coded
+    exchange_segment="NSE_EQ",
+    transaction_type="BUY",
+    quantity=1,
+    order_type="MARKET",
+    product_type="CNC",
+    price=0,
+    lot_size=1,
+    dry_run=True,
+)
+```
+
+Pass `security_id` + `lot_size=1` so validation does not look up lot size from CSV. Do not call `resolve_symbol()` for this path. Do not hard-code IDs in Python.
+
+**Options / F&O / symbol lookup** (default; master may download):
 
 ```python
 from pathlib import Path
 from broker.Dhan_SRP import Dhansrp
 
-ROOT = Path(__file__).resolve().parents[1]
-MASTER = ROOT / "broker" / "security_id" / "api-scrip-master.csv"
-
 dhan = Dhansrp(
-    config_path=str(ROOT / "config" / "dhan_config.json"),
     enable_file_logging=False,
-    instrument_cache_path=str(MASTER) if MASTER.exists() else None,
     persist_instrument_file=False,
 )
+
+resolved = dhan.resolve_symbol("HDFCBANK", exchange_segment="NSE_EQ")
 ```
 
-On first login, if no cache path is set, the module fetches the security master from Dhan (or `dhanhq.fetch_security_list()` when available).
+On 2.0.2, compact `fetch_security_list` fails; v2.9 falls back to the public CSV URL when `skip_instrument_master` is False.
 
 ---
 
@@ -216,7 +257,7 @@ from broker.Dhan_SRP import Dhansrp
 
 
 def run_algo():
-    dhan = Dhansrp(config_path="config/dhan_config.json")
+    dhan = Dhansrp()  # .env credentials
 
     snapshot = dhan.get_option_chain_snapshot(underlying="NIFTY")
     spot = snapshot["spot"]
@@ -238,11 +279,15 @@ if __name__ == "__main__":
 
 ## Security ID Lookup — Important
 
-There are **two different** lookup methods. Use the right one.
+There are **three** ways to get a `security_id`. Prefer config IDs for equity MARKET algos.
+
+### Config IDs — equity when you already know the ID
+
+Keep `security_id` / `instrument_id` in *your* YAML or JSON (example HDFCBANK `"1333"`). Do **not** hard-code them in Python. Init with `skip_instrument_master=True` and pass the ID plus `lot_size=1` into `place_order()`. Do not call `resolve_symbol()` on this path.
 
 ### `resolve_symbol()` — any NSE/BSE equity from security master
 
-Preferred for general stock algos. Searches the full instrument DataFrame.
+Use when you do **not** have an ID in config. Requires `skip_instrument_master=False` (default). Searches the full instrument DataFrame.
 
 ```python
 resolved = dhan.resolve_symbol("HDFCBANK", exchange_segment="NSE_EQ", instrument_name="EQUITY")
@@ -313,8 +358,22 @@ Pass `under_security_id` when calling `get_option_chain_snapshot`, `fetch_option
 Universal order method. Resolves symbol if needed, validates, previews, then places (unless `dry_run=True`).
 
 ```python
+# Equity MARKET with an ID from your config (no CSV):
 result = dhan.place_order(
-    symbol="HDFCBANK",           # or security_id="1333"
+    security_id=str(config["security_id"]),
+    exchange_segment="NSE_EQ",
+    transaction_type="BUY",
+    quantity=1,
+    order_type="MARKET",
+    product_type="CNC",
+    price=0,
+    lot_size=1,
+    dry_run=True,
+)
+
+# Or resolve from the master (options / unknown IDs):
+result = dhan.place_order(
+    symbol="HDFCBANK",
     exchange_segment="NSE_EQ",
     transaction_type="BUY",
     quantity=10,
@@ -560,10 +619,22 @@ atm_row = dhan.find_atm_row(chain_df, spot)
 
 ### LTP and quotes
 
+For a single equity/F&O contract, call the SDK with **one** segment list only:
+
+```python
+dhan.Dhan.ticker_data({exchange_segment: [int(security_id)]})
+```
+
+Do **not** send empty lists for unused segments (`NSE_EQ`, `NSE_FNO`, …). Empty segment lists produce empty Dhan error dicts.
+
+Helpers that wrap quotes:
+
 ```python
 dhan.get_ltp_data(["NIFTY", "RELIANCE"])
 dhan.get_quote(["NIFTY", "HDFCBANK"])
 ```
+
+A failure with `{error_code: None, error_type: None, error_message: None}` usually means an expired token, the server **static IP is not whitelisted**, or the Data API plan is missing. Quotes can succeed while order placement fails.
 
 ### Historical data
 
@@ -647,7 +718,7 @@ Requires `DhanContext` and `MarketFeed` / `OrderUpdate` from a recent `dhanhq` i
 | Method | Description |
 |--------|-------------|
 | `get_login()` | Internal; called from `__init__` |
-| `get_instrument_file()` | Load or download security master |
+| `get_instrument_file()` | Load or download security master; empty `SEM_*` frame when `skip_instrument_master=True` |
 | `get_security_master(refresh=False)` | Return instrument DataFrame |
 | `resolve_symbol()` | Equity lookup from master |
 | `get_security_id_by_symbol()` | NIFTY 50 static map only |
@@ -719,28 +790,18 @@ Requires `DhanContext` and `MarketFeed` / `OrderUpdate` from a recent `dhanhq` i
 from broker.Dhan_SRP import Dhansrp
 
 
-def run_hdfcbank_intraday():
-    dhan = Dhansrp(config_path="config/dhan_config.json")
+def run_hdfcbank_market(security_id: str):
+    dhan = Dhansrp(skip_instrument_master=True)
 
-    resolved = dhan.resolve_symbol("HDFCBANK")
-    preview = dhan.prepare_equity_limit_order(
-        symbol="HDFCBANK",
-        price=1800.0,
-        quantity=10,
+    return dhan.place_order(
+        security_id=str(security_id),  # from your config, not hard-coded
+        exchange_segment="NSE_EQ",
         transaction_type="BUY",
-        product_type="INTRADAY",
-    )
-
-    if not preview["validation"]["valid"]:
-        return preview
-
-    return dhan.place_stock_order(
-        symbol="HDFCBANK",
-        quantity=10,
-        transaction_type="BUY",
-        order_type="LIMIT",
-        product_type="INTRADAY",
-        price=1800.0,
+        quantity=1,
+        order_type="MARKET",
+        product_type="CNC",
+        price=0,
+        lot_size=1,
         dry_run=True,
     )
 ```
@@ -752,7 +813,7 @@ from broker.Dhan_SRP import Dhansrp
 
 
 def run_nifty_straddle():
-    dhan = Dhansrp(config_path="config/dhan_config.json")
+    dhan = Dhansrp()  # skip_instrument_master=False; master may download
 
     margin_check = dhan.get_atm_option_pair(underlying="NIFTY")
     print(f"ATM strike: {margin_check['strike']}, lot: {margin_check['lot_size']}")
@@ -760,47 +821,48 @@ def run_nifty_straddle():
     return dhan.place_atm_straddle(underlying="NIFTY", dry_run=True)
 ```
 
-## Example: Pass credentials from your own config loader
+## Example: IDs from YAML, credentials from `.env`
 
 ```python
 import yaml
 from broker.Dhan_SRP import Dhansrp
 
 
-def load_dhan_from_yaml(path: str) -> Dhansrp:
+def load_dhan_from_yaml(path: str) -> tuple[Dhansrp, dict]:
     with open(path) as f:
         cfg = yaml.safe_load(f)
-    dhan_cfg = cfg["dhan"]
-    return Dhansrp(
-        ClientCode=dhan_cfg["client_id"],
-        token_id=dhan_cfg["access_token"],
-        enable_file_logging=False,
-    )
+    instrument = cfg["instruments"]["HDFCBANK"]
+    dhan = Dhansrp(skip_instrument_master=True)
+    return dhan, instrument
 ```
+
+Do not put `DHAN_CLIENT_ID` / `DHAN_ACCESS_TOKEN` in YAML.
 
 ---
 
 ## Practical Notes
 
 - **Always start with `dry_run=True`** in new algos.
+- **Python 3.9:** pin `dhanhq==2.0.2`. 2.2+ needs Python 3.10+.
+- **Credentials:** `.env` next to the module or cwd. Never commit or log tokens. Never put them in YAML.
+- **Equity IDs:** store `security_id` in *your* config. `skip_instrument_master=True` and `place_order(..., security_id=..., lot_size=1)`. Do not hard-code IDs in Python.
+- **Options / unknown symbols:** leave `skip_instrument_master=False` so the master can download.
+- **Quotes:** `ticker_data({exchange_segment: [int(security_id)]})` only. Do not send empty segment lists.
+- **Empty Dhan remarks** (`error_code: None`): token, static IP whitelist, or data plan.
 - **Live orders** require Dhan static IP whitelisting on your server/VPS.
 - **Market data and option chain** require an active Dhan data plan.
 - **F&O:** confirm lot size and margin before live placement; quantity must be in lots.
 - **Product types:** never use `CNC` or `MTF` for F&O segments.
-- **Config:** `Dhan_SRP.py` reads JSON credentials natively; bridge from YAML in your app if needed.
-- **Instrument file:** first init may download a large CSV; use `instrument_cache_path` in production algos to avoid repeated downloads.
-- **Imports:** after copying to a new repo, verify `dhanhq` SDK version once in that environment.
-- **Do not commit** `dhan_config.json` or access tokens to git.
 
 ---
 
 ## Syncing Updates From This Repo
 
-When `Dhan_SRP.py` is updated here (currently v2.8), copy the new file into your algo repos and re-run:
+When `Dhan_SRP.py` is updated here (currently v2.9), copy **both** `Dhan_SRP.py` and `srp_dhan_helper.md` into your algo repos and re-run:
 
-1. Login test
-2. One equity `resolve_symbol` + `dry_run` order
-3. One option-chain call (if your algo uses F&O)
+1. Login test (`.env` loaded, no tokens in logs)
+2. Equity: `skip_instrument_master=True` + `place_order(security_id=..., lot_size=1, dry_run=True)`
+3. One option-chain call (if your algo uses F&O; default skip flag)
 
 ---
 
@@ -808,4 +870,4 @@ When `Dhan_SRP.py` is updated here (currently v2.8), copy the new file into your
 
 Treat `Dhan_SRP.py` as your portable Dhan broker adapter.
 
-For any new repo: copy the file, initialize `Dhansrp`, keep signal logic in separate algo modules, and call this module for data, validation, margin, and execution. Use `resolve_symbol()` for general stocks, `get_security_id_by_symbol()` only for the built-in NIFTY 50 map, and `dry_run=True` until you are ready for live trading.
+For any new repo: copy these two files, keep secrets in `.env`, keep instrument IDs in *your* config (not in Python), initialize `Dhansrp` with `skip_instrument_master=True` for known equity IDs or `False` for options lookup, and use `dry_run=True` until you are ready for live trading.

@@ -1,0 +1,50 @@
+strategy:
+  name: "Dhan Limit Order Algo"
+  enabled: true
+
+instrument:
+  symbol: "HDFCBANK"
+  security_id: "1333"
+  exchange_segment: "NSE_EQ"
+  tick_size: 0.05
+
+order:
+  transaction_type: "BUY"
+  quantity: 1
+  order_type: "LIMIT"
+  product_type: "CNC"
+  validity: "DAY"
+
+  entry_price: 1650.00
+  limit_price: 1649.50
+
+management:
+  modification:
+    enabled: false
+    new_limit_price: 1648.00
+    max_modifications: 2
+
+  cancellation:
+    enabled: false
+    cancel_after_seconds: 300
+
+  risk:
+    enabled: true
+    take_profit_percent: 2.0
+    stop_loss_percent: 1.0
+    # Optional absolute prices override percent when set:
+    # take_profit_price: 1683.00
+    # stop_loss_price: 1633.00
+
+runtime:
+  poll_interval_seconds: 2
+  max_order_wait_seconds: 900
+
+safety:
+  dry_run: true
+  allow_live_trading: false
+  require_confirmation: true
+  max_quantity: 1000
+
+logging:
+  level: "INFO"

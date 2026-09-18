@@ -1,0 +1,79 @@
+# Dhan Moving Average Crossover — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires BOTH:
+#   bot.dry_run: false
+#   bot.allow_live_trading: true
+# Otherwise the bot fetches real data and only logs the orders it would send.
+
+bot:
+  name: "Dhan Moving Average Crossover"
+  mode: "LIVE"
+  dry_run: true
+  allow_live_trading: false
+
+strategy:
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  timeframe: "5"
+  fast_ma_period: 9
+  slow_ma_period: 21
+  # SMA or EMA. Add a calculator in main.py to support more types.
+  ma_type: "SMA"
+  # LONG_ONLY | SHORT_ONLY | LONG_SHORT
+  trading_mode: "LONG_ONLY"
+
+instrument:
+  exchange_segment: "NSE_EQ"
+  security_id: "1333"
+  trading_symbol: "HDFCBANK"
+  quantity: 1
+  product_type: "INTRADAY"
+  tick_size: 0.05
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+
+order:
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  entry_order_type: "MARKET"
+  exit_order_type: "MARKET"
+  validity: "DAY"
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+
+risk:
+  take_profit_enabled: true
+  take_profit_percent: 1.0
+  stop_loss_enabled: true
+  stop_loss_percent: 0.5
+  # Optional absolute prices. When set, they override the percent method.
+  # take_profit_price: 0
+  # stop_loss_price: 0
+  stop_bot_on_tp: true
+  stop_bot_on_sl: true
+
+trading_session:
+  enabled: true
+  start_time: "09:20"
+  stop_time: "15:15"
+  timezone: "Asia/Kolkata"
+  close_all_positions_at_stop: true
+
+polling:
+  interval_seconds: 10
+  candle_lookback: 100
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N loop cycles.
+  reconcile_every_cycles: 6
+
+shutdown:
+  close_positions_on_manual_stop: false
+  close_positions_on_error: false
+  # If true, adopt a broker position at startup for TP/SL and strategy exits.
+  # If false, never close or add to that position; wait until it is gone.
+  manage_existing_positions: true
+
+logging:
+  level: "INFO"

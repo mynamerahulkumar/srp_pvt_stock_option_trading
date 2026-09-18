@@ -1,0 +1,150 @@
+# Price Action Momentum Scalper — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires BOTH:
+#   runtime.dry_run: false
+#   runtime.allow_live_trading: true
+# Otherwise the bot fetches real market data and only simulates orders locally.
+#
+# Percentage values are percent units, not fractions:
+#   risk.take_profit.value: 0.30  means  0.30%  (₹1,000 → TP ₹1,003.00)
+
+app:
+  name: "Dhan Price Action Momentum Scalper"
+  version: "1.0.0"
+
+runtime:
+  # true = never send Dhan orders. false still needs allow_live_trading.
+  dry_run: true
+  allow_live_trading: false
+  # Trading API cycle. Independent of cli.refresh_seconds.
+  polling_seconds: 5
+  state_file: "state/bot_state.json"
+  # Completed candles retained for lookback / volume / trend warmup.
+  # Keep small for a 1 GB RAM VM.
+  candle_lookback: 80
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N poll cycles.
+  reconcile_every_cycles: 6
+  enabled: true
+
+instrument:
+  exchange_segment: "NSE_EQ"
+  trading_symbol: "RELIANCE"
+  security_id: "2885"
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+  # CNC | INTRADAY | MARGIN | MTF for equity. F&O must be INTRADAY or MARGIN.
+  product_type: "INTRADAY"
+  quantity: 1
+  tick_size: 0.05
+
+order:
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  order_type: "MARKET"
+  validity: "DAY"
+  disclosed_quantity: 0
+  amo: false
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+
+strategy:
+  enabled: true
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  # "5m" / "15m" forms are also accepted and normalized.
+  timeframe: "1"
+  # Prior completed candles used for the breakout high/low (evaluation bar excluded).
+  lookback_candles: 5
+  # Body / range of the evaluation candle. 0.60 = body is at least 60% of the range.
+  minimum_body_ratio: 0.60
+  # Minimum distance of the close beyond the breakout level, as a percent. 0 disables.
+  minimum_price_move_percent: 0.0
+  allow_long: true
+  allow_short: true
+  cooldown_seconds: 60
+  max_trades_per_day: 5
+  # Evaluate entries only on a newly completed candle (no look-ahead).
+  signal_on_closed_candle: true
+
+  volume_confirmation:
+    enabled: true
+    average_period: 20
+    volume_multiplier: 1.20
+
+  trend_confirmation:
+    enabled: false
+    fast_period: 9
+    slow_period: 21
+
+risk:
+  take_profit:
+    enabled: true
+    # PERCENT | POINTS
+    type: "PERCENT"
+    value: 0.30
+
+  stop_loss:
+    enabled: true
+    # PERCENT | POINTS
+    type: "PERCENT"
+    value: 0.20
+
+  # After a verified TP / SL exit, stop the process (spec default).
+  stop_bot_after_exit: true
+  # Optional estimate subtracted from displayed P&L. Labelled as an estimate.
+  estimated_cost_per_trade: 0
+
+daily_limits:
+  enabled: true
+  # 0 disables that side of the daily halt.
+  max_loss: 1000
+  max_profit: 3000
+  close_position_on_limit: true
+
+execution:
+  one_position_at_a_time: true
+  verify_order_status: true
+  verify_position_before_entry: true
+  max_entry_slippage_percent: 0.10
+  max_exit_slippage_percent: 0.20
+  order_tag: "PAM_SCALPER"
+  wait_for_order_confirmation: true
+  order_status_poll_seconds: 1
+  order_timeout_seconds: 15
+  prevent_duplicate_orders: true
+
+schedule:
+  enabled: true
+  timezone: "Asia/Kolkata"
+  start_time: "09:20"
+  stop_time: "15:15"
+  close_all_positions_at_stop_time: true
+
+emergency_stop:
+  # When python stop.py is used, flatten the strategy position before exit.
+  close_position: true
+  cancel_pending_orders_on_shutdown: true
+  close_positions_on_error: false
+  max_api_retries: 3
+  retry_delay_seconds: 2
+  manage_only_configured_symbol: true
+  require_flat_before_entry: true
+  block_if_unexpected_position: true
+  require_confirmation_for_live_trading: false
+
+cli:
+  enabled: true
+  refresh_seconds: 1
+  show_signal_details: true
+  show_position_pnl: true
+  show_recent_logs: true
+  event_history_size: 8
+
+logging:
+  level: "INFO"
+  file: "logs/price_action_momentum.log"
+  max_bytes: 5242880
+  backup_count: 3

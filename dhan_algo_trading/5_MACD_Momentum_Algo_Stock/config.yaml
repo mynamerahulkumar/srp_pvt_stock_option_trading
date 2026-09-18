@@ -1,0 +1,120 @@
+# Dhan MACD Momentum — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires BOTH:
+#   bot.dry_run: false
+#   bot.allow_live_trading: true
+# Otherwise the bot fetches real market data and only simulates orders locally.
+
+bot:
+  name: "MACD Momentum Algo"
+  enabled: true
+  # Trading API cycle. Independent of cli.refresh_seconds.
+  polling_seconds: 5
+  # true = never send Dhan orders. false still needs allow_live_trading.
+  dry_run: false
+  allow_live_trading: true
+  # Completed candles retained for MACD / filter warmup. 500 ≈ 7 NSE sessions of 5m bars.
+  candle_lookback: 500
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N poll cycles.
+  reconcile_every_cycles: 6
+
+instrument:
+  exchange_segment: "NSE_EQ"
+  security_id: "2885"
+  symbol: "RELIANCE"
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+  # CNC | INTRADAY | MARGIN | MTF for equity. F&O must be INTRADAY or MARGIN.
+  product_type: "INTRADAY"
+  quantity: 1
+  tick_size: 0.05
+
+strategy:
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  # "5m" / "15m" forms are also accepted and normalized.
+  timeframe: "5m"
+  macd:
+    fast_period: 12
+    slow_period: 26
+    signal_period: 9
+  filters:
+    histogram_confirmation: true
+    trend_filter_enabled: false
+    trend_ma_period: 50
+    rsi_filter_enabled: false
+    rsi_period: 14
+    rsi_min: 50
+    rsi_max: 50
+    volume_filter_enabled: false
+    minimum_volume: 0
+
+risk:
+  # PERCENT or POINTS
+  stop_loss_type: "PERCENT"
+  take_profit_type: "PERCENT"
+  stop_loss: 1.0
+  take_profit: 2.0
+  trailing_stop_enabled: false
+  trailing_stop: 0.75
+  max_trades_per_day: 3
+  max_open_positions: 1
+  # 0 disables the daily loss/profit halt.
+  max_daily_loss: 0
+  max_daily_profit: 0
+  # Optional estimate subtracted from displayed P&L. Labelled as an estimate.
+  estimated_cost_per_trade: 0
+  # If true, a daily risk limit also flattens an open position and stops the bot.
+  close_on_risk_limit: false
+
+execution:
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  order_type: "MARKET"
+  validity: "DAY"
+  allow_long: true
+  allow_short: false
+  prevent_duplicate_orders: true
+  cooldown_seconds: 60
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+
+trading_hours:
+  enabled: true
+  start_time: "09:20"
+  stop_entry_time: "15:00"
+  close_positions_time: "15:15"
+  timezone: "Asia/Kolkata"
+
+startup:
+  behavior: "WAIT_FOR_SIGNAL"
+  reconcile_existing_positions: true
+  manage_existing_position: true
+
+shutdown:
+  # Spec default: a manual stop does not flatten an open trade.
+  close_positions_on_manual_stop: false
+  close_positions_on_session_end: true
+  close_positions_on_tp_sl: true
+  close_positions_on_error: false
+  cancel_pending_orders: true
+
+safety:
+  manage_only_configured_symbol: true
+  require_flat_before_entry: true
+  block_if_unexpected_position: true
+
+logging:
+  level: "INFO"
+
+cli:
+  enabled: true
+  # Dashboard redraw interval. Does not call Dhan by itself.
+  refresh_seconds: 1
+  show_indicators: true
+  show_signal: true
+  show_orders: true
+  event_history_size: 8

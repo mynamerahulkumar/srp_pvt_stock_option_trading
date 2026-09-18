@@ -1,0 +1,150 @@
+# EMA + VWAP Scalper — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires BOTH:
+#   bot.dry_run: false
+#   bot.allow_live_trading: true
+# Otherwise the bot fetches real market data and only simulates orders locally.
+#
+# Percentage values are percent units, not fractions:
+#   risk.take_profit.value: 0.50  means  0.50%  (₹2500 → TP ₹2512.50)
+
+bot:
+  name: "EMA_VWAP_SCALPER"
+  mode: "LIVE"
+  enabled: true
+  # Trading API cycle. Independent of cli.refresh_seconds.
+  polling_seconds: 5
+  # true = never send Dhan orders. false still needs allow_live_trading.
+  dry_run: true
+  allow_live_trading: false
+  # Completed candles retained for EMA / VWAP warmup. Keep small for 1 GB RAM.
+  candle_lookback: 80
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N poll cycles.
+  reconcile_every_cycles: 6
+  log_level: "INFO"
+
+instrument:
+  exchange_segment: "NSE_EQ"
+  symbol: "RELIANCE"
+  security_id: "2885"
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+  # CNC | INTRADAY | MARGIN | MTF for equity. F&O must be INTRADAY or MARGIN.
+  product_type: "INTRADAY"
+  quantity: 1
+  tick_size: 0.05
+
+strategy:
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  # "5m" / "15m" forms are also accepted and normalized.
+  timeframe: "5m"
+  # Evaluate entries only on a newly completed candle (no look-ahead).
+  signal_on_closed_candle: true
+
+  ema:
+    fast_period: 9
+    slow_period: 21
+
+  vwap:
+    enabled: true
+
+  entry:
+    require_ema_alignment: true
+    require_vwap_confirmation: true
+    candle_confirmation: true
+    minimum_volume_multiplier: 1.0
+
+  exit:
+    opposite_signal: true
+
+risk:
+  take_profit:
+    enabled: true
+    # percentage | points
+    type: "percentage"
+    value: 0.50
+
+  stop_loss:
+    enabled: true
+    # percentage | points
+    type: "percentage"
+    value: 0.30
+
+  max_daily_loss: 1000
+  max_trades_per_day: 10
+  max_open_positions: 1
+  # 0 disables the daily-profit halt.
+  max_daily_profit: 0
+  # Optional estimate subtracted from displayed P&L. Labelled as an estimate.
+  estimated_cost_per_trade: 0
+  # If true, a daily risk limit also flattens an open position and stops the bot.
+  close_on_risk_limit: false
+  # After a verified TP / SL exit, stop the process (spec requirement).
+  stop_bot_after_tp_sl: true
+
+trading_session:
+  enabled: true
+  start_time: "09:20"
+  stop_new_entries_time: "15:00"
+  close_all_positions_time: "15:15"
+  timezone: "Asia/Kolkata"
+
+execution:
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  order_type: "MARKET"
+  validity: "DAY"
+  # BOTH | LONG | SHORT
+  entry_side: "BOTH"
+  wait_for_order_confirmation: true
+  order_status_poll_seconds: 1
+  order_timeout_seconds: 15
+  prevent_duplicate_orders: true
+  cooldown_seconds: 0
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+
+position_management:
+  monitor_pnl: true
+  exit_on_tp: true
+  exit_on_sl: true
+  exit_on_opposite_signal: true
+  manage_only_bot_positions: true
+
+startup:
+  behavior: "WAIT_FOR_SIGNAL"
+  wait_for_start_time: true
+  reconcile_existing_positions: true
+  manage_existing_position: true
+
+safety:
+  prevent_duplicate_orders: true
+  cancel_pending_orders_on_shutdown: true
+  close_positions_on_shutdown: false
+  close_positions_on_session_end: true
+  close_positions_on_tp_sl: true
+  close_positions_on_error: false
+  max_api_retries: 3
+  retry_delay_seconds: 2
+  manage_only_configured_symbol: true
+  require_flat_before_entry: true
+  block_if_unexpected_position: true
+  require_confirmation_for_live_trading: false
+
+logging:
+  level: "INFO"
+
+cli:
+  enabled: true
+  refresh_seconds: 5
+  show_recent_logs: true
+  show_signal_status: true
+  show_position_pnl: true
+  show_indicators: true
+  show_signal: true
+  show_orders: true
+  event_history_size: 8

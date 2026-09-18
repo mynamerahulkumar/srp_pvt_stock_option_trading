@@ -1,0 +1,146 @@
+# Dhan VWAP Intraday Momentum — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires BOTH:
+#   bot.dry_run: false
+#   bot.allow_live_trading: true
+# Otherwise the bot fetches real market data and only simulates orders locally.
+
+bot:
+  name: "VWAP Intraday Momentum"
+  enabled: true
+  # Trading API cycle. Independent of cli.refresh_seconds.
+  polling_seconds: 5
+  # true = never send Dhan orders. false still needs allow_live_trading.
+  dry_run: false
+  allow_live_trading: true
+  # Completed candles retained for EMA / volume warmup. Keep small for 1 GB RAM.
+  candle_lookback: 100
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N poll cycles.
+  reconcile_every_cycles: 6
+
+instrument:
+  exchange_segment: "NSE_EQ"
+  security_id: "2885"
+  symbol: "RELIANCE"
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+  # CNC | INTRADAY | MARGIN | MTF for equity. F&O must be INTRADAY or MARGIN.
+  product_type: "INTRADAY"
+  quantity: 1
+  tick_size: 0.05
+
+strategy:
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  # "5m" / "15m" forms are also accepted and normalized.
+  timeframe: "5m"
+  # Evaluate entries only on a newly completed candle (no look-ahead).
+  signal_on_closed_candle: true
+  vwap:
+    enabled: true
+    # Session VWAP must be flat-to-rising over this many completed session bars.
+    slope_lookback: 2
+  momentum:
+    enabled: true
+    lookback_bars: 3
+    minimum_price_change_percent: 0.20
+  volume:
+    enabled: true
+    volume_lookback: 20
+    minimum_volume_multiplier: 1.20
+  breakout:
+    enabled: true
+    breakout_buffer_percent: 0.05
+  trend:
+    enabled: true
+    ema_period: 20
+    require_rising_ema: true
+  confirmation:
+    # BUY only when at least this many enabled conditions pass.
+    minimum_conditions: 3
+
+exit:
+  vwap_failure_exit:
+    enabled: false
+  momentum_failure_exit:
+    enabled: false
+
+risk:
+  take_profit_percent: 1.0
+  stop_loss_percent: 0.50
+  max_daily_loss: 2000
+  max_daily_trades: 5
+  max_open_positions: 1
+  # 0 disables the daily-profit halt.
+  max_daily_profit: 0
+  # Optional estimate subtracted from displayed P&L. Labelled as an estimate.
+  estimated_cost_per_trade: 0
+  # If true, a daily risk limit also flattens an open position and stops the bot.
+  close_on_risk_limit: false
+  # After a verified TP / SL / trail / strategy exit, stop the process.
+  stop_bot_after_exit: true
+  trailing_stop:
+    enabled: false
+    # Price must first move this percent in favor before the trail arms.
+    activation_percent: 0.50
+    trail_percent: 0.25
+
+execution:
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  order_type: "MARKET"
+  validity: "DAY"
+  enable_long: true
+  enable_short: false
+  prevent_duplicate_orders: true
+  cooldown_seconds: 60
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+
+trading_hours:
+  enabled: true
+  start_time: "09:20"
+  stop_entry_time: "15:00"
+  close_positions_time: "15:15"
+  timezone: "Asia/Kolkata"
+
+startup:
+  behavior: "WAIT_FOR_SIGNAL"
+  wait_for_start_time: true
+  reconcile_existing_positions: true
+  manage_existing_position: true
+
+shutdown:
+  # Spec default: a manual stop may flatten an open trade.
+  close_positions_on_manual_stop: true
+  close_positions_on_session_end: true
+  close_positions_on_tp_sl: true
+  close_positions_on_error: false
+  cancel_pending_orders: true
+  # After close_positions_time, fetch LTP/indicators this many polls, then exit.
+  # 3 polls * polling_seconds 5 = ~30s. 0 = exit immediately (old behavior).
+  closed_market_confirm_polls: 3
+
+position_management:
+  manage_only_bot_positions: true
+
+safety:
+  manage_only_configured_symbol: true
+  require_flat_before_entry: true
+  block_if_unexpected_position: true
+  require_confirmation_for_live_trading: false
+
+logging:
+  level: "INFO"
+
+cli:
+  enabled: true
+  # Dashboard redraw interval. Does not call Dhan by itself.
+  refresh_seconds: 1
+  show_indicators: true
+  show_signal: true
+  show_orders: true
+  event_history_size: 8

@@ -25,7 +25,22 @@ from collections import Counter
 import urllib.parse
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-print("Codebase Version 2.8 : Solved - Strike Selection Issue")
+print("Codebase Version 2.9 : Env credentials, skip-CSV equity IDs, dhanhq 2.0.2 fallback")
+
+INSTRUMENT_MASTER_COLUMNS = [
+	'SEM_TRADING_SYMBOL',
+	'SEM_CUSTOM_SYMBOL',
+	'SEM_EXM_EXCH_ID',
+	'SEM_SMST_SECURITY_ID',
+	'SEM_INSTRUMENT_NAME',
+	'SEM_EXPIRY_CODE',
+	'SEM_LOT_UNITS',
+	'SEM_TICK_SIZE',
+	'SEM_EXPIRY_DATE',
+	'SEM_STRIKE_PRICE',
+	'SEM_OPTION_TYPE',
+	'SM_SYMBOL_NAME',
+]
 
 NIFTY50_SECURITY_IDS = {
 	"ADANIENT": 25,
@@ -92,15 +107,17 @@ class Dhansrp:
 	call                                            : str
 	put                                             : str
 
-	def __init__(self,ClientCode:str=None,token_id:str=None,config_path:str=None,enable_file_logging:bool=False,instrument_cache_path:str=None,persist_instrument_file:bool=False):
+	def __init__(self,ClientCode:str=None,token_id:str=None,config_path:str=None,enable_file_logging:bool=False,instrument_cache_path:str=None,persist_instrument_file:bool=False,skip_instrument_master:bool=False):
 		'''
 		Clientcode                              = The ClientCode in string 
-		token_id                                = The token_id in string 
+		token_id                                = The token_id in string
+		skip_instrument_master                  = True when security_id comes from config.yaml (no CSV download)
 		'''
 		self.config_path = config_path
 		self.enable_file_logging = enable_file_logging
 		self.instrument_cache_path = instrument_cache_path
 		self.persist_instrument_file = persist_instrument_file
+		self.skip_instrument_master = skip_instrument_master
 		self.logger = self._setup_logger(enable_file_logging=enable_file_logging)
 		logging.info('Dhan.py  started system')
 		logging.getLogger("requests").setLevel(logging.WARNING)
@@ -153,11 +170,32 @@ class Dhansrp:
 
 		return logger
 
+	def _load_dotenv_if_available(self):
+		try:
+			from dotenv import load_dotenv
+		except ImportError:
+			return
+		candidates = []
+		module_dir = Path(__file__).resolve().parent
+		candidates.append(module_dir / '.env')
+		candidates.append(Path.cwd() / '.env')
+		seen = set()
+		for path in candidates:
+			resolved = path.resolve()
+			if resolved in seen or not path.exists():
+				continue
+			seen.add(resolved)
+			load_dotenv(path)
+
+	def _empty_instrument_df(self):
+		return pd.DataFrame(columns=INSTRUMENT_MASTER_COLUMNS)
+
 	def _load_config(self, path: str) -> dict:
 		with open(path, encoding='utf-8') as handle:
 			return json.load(handle)
 
 	def _resolve_credentials(self, ClientCode=None, token_id=None, config_path=None):
+		self._load_dotenv_if_available()
 		client_code = ClientCode or os.environ.get('DHAN_CLIENT_ID')
 		access_token = token_id or os.environ.get('DHAN_ACCESS_TOKEN')
 		paths_to_try = [config_path, self.config_path, os.environ.get('DHAN_CONFIG_PATH'), 'config.json']
@@ -208,6 +246,10 @@ class Dhansrp:
 
 	def get_instrument_file(self):
 		global instrument_df
+		if getattr(self, 'skip_instrument_master', False):
+			self.logger.info('skip_instrument_master=True; using config security_id, not downloading CSV')
+			instrument_df = self._empty_instrument_df()
+			return instrument_df
 		expected_file = 'all_instrument.csv'
 		expected_path = None
 		if self.instrument_cache_path:
@@ -226,12 +268,17 @@ class Dhansrp:
 				self.logger.warning('Instrument cache read failed. Fetching a fresh security master.')
 
 		print('Fetching security master from Dhan')
+		instrument_df = None
 		if hasattr(dhanhq, 'fetch_security_list'):
 			try:
 				instrument_df = dhanhq.fetch_security_list('compact')
-			except TypeError:
-				instrument_df = dhanhq.fetch_security_list()
-		else:
+			except (TypeError, AttributeError) as exc:
+				self.logger.warning('fetch_security_list(compact) failed on this dhanhq version (%s). Falling back to CSV URL.', exc)
+				try:
+					instrument_df = dhanhq.fetch_security_list()
+				except (TypeError, AttributeError):
+					instrument_df = None
+		if instrument_df is None:
 			instrument_df = pd.read_csv('https://images.dhan.co/api-data/api-scrip-master.csv', low_memory=False)
 
 		instrument_df = self._normalize_instrument_df(instrument_df)
@@ -248,7 +295,10 @@ class Dhansrp:
 		return response.get('data')
 
 	def get_security_master(self, refresh: bool = False):
-		if refresh or getattr(self, 'instrument_df', None) is None or self.instrument_df.empty:
+		missing = getattr(self, 'instrument_df', None) is None
+		skip_csv = getattr(self, 'skip_instrument_master', False)
+		empty = (not missing) and self.instrument_df.empty and not skip_csv
+		if refresh or missing or empty:
 			self.instrument_df = self.get_instrument_file()
 		return self.instrument_df.copy()
 
@@ -445,6 +495,13 @@ class Dhansrp:
 		return resolved
 
 	def place_order(self, symbol: str = None, security_id: str = None, exchange_segment: str = 'NSE_EQ', transaction_type: str = 'BUY', quantity: int = 1, order_type: str = 'LIMIT', product_type: str = 'CNC', price: float = 0, trigger_price: float = 0, validity: str = 'DAY', disclosed_quantity: int = 0, after_market_order: bool = False, amo_time: str = 'OPEN', tag: str = None, lot_size: int = None, instrument_name: str = 'EQUITY', dry_run: bool = False):
+		'''Place an order via Dhan.
+
+		Equity MARKET orders that already have a config security_id must pass
+		that security_id plus lot_size=1. That skips security-master CSV
+		resolution and lot-size lookup. Do not resolve equity IDs from the
+		instrument CSV when they are supplied in config.yaml.
+		'''
 		resolved = self._resolve_order_security(symbol=symbol, security_id=security_id, exchange_segment=exchange_segment, instrument_name=instrument_name)
 		validation = self.validate_order_payload(security_id=resolved['security_id'], exchange_segment=exchange_segment, transaction_type=transaction_type, quantity=quantity, order_type=order_type, product_type=product_type, price=price, trigger_price=trigger_price, validity=validity, after_market_order=after_market_order, trading_symbol=resolved.get('trading_symbol'), lot_size=lot_size)
 		preview = self.preview_order(security_id=resolved['security_id'], exchange_segment=exchange_segment, transaction_type=transaction_type, quantity=quantity, order_type=order_type.upper(), product_type=product_type.upper(), price=price, trading_symbol=resolved.get('trading_symbol'))
@@ -821,12 +878,15 @@ class Dhansrp:
 	
 
 	def get_start_date(self):
+		start_date = (datetime.datetime.now()-datetime.timedelta(days=5)).strftime('%Y-%m-%d')
+		to_date = datetime.datetime.now().strftime('%Y-%m-%d')
 		try:
-			instrument_df = self.instrument_df.copy()
+			instrument_df = getattr(self, 'instrument_df', None)
+			if instrument_df is None or instrument_df.empty or 'SEM_TRADING_SYMBOL' not in instrument_df.columns:
+				return start_date, to_date
+			instrument_df = instrument_df.copy()
 			from_date= datetime.datetime.now()-datetime.timedelta(days=100)
-			start_date = (datetime.datetime.now()-datetime.timedelta(days=5)).strftime('%Y-%m-%d')
 			from_date = from_date.strftime('%Y-%m-%d')
-			to_date = datetime.datetime.now().strftime('%Y-%m-%d')
 			instrument_exchange = {'NSE':"NSE",'BSE':"BSE",'NFO':'NSE','BFO':'BSE','MCX':'MCX','CUR':'NSE'}
 			tradingsymbol = "NIFTY"
 			exchange = "NSE"

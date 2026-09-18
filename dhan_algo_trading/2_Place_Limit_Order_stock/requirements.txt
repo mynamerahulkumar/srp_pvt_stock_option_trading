@@ -1,0 +1,4 @@
+# Current dhanhq 2.2+ requires Python 3.10+.
+dhanhq
+PyYAML
+python-dotenv

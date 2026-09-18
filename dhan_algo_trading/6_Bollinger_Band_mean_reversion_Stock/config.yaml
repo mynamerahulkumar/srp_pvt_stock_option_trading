@@ -1,0 +1,119 @@
+# Dhan Bollinger Band Mean-Reversion — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires ALL THREE:
+#   bot.environment: "live"
+#   bot.allow_live_trading: true
+#   safety.dry_run: false
+# Otherwise the bot fetches real market data and only simulates orders locally.
+
+bot:
+  name: "BB Mean Reversion"
+  # paper | live
+  environment: "live"
+  enabled: true
+  # Second live-trading lock. Must be true together with environment: live
+  # and safety.dry_run: false.
+  allow_live_trading: true
+
+instrument:
+  exchange_segment: "NSE_EQ"
+  security_id: "2885"
+  symbol: "RELIANCE"
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+  # CNC | INTRADAY | MARGIN | MTF for equity. F&O must be INTRADAY or MARGIN.
+  product_type: "INTRADAY"
+  tick_size: 0.05
+
+strategy:
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  # "5m" / "15m" forms are also accepted and normalized.
+  timeframe: "5m"
+  bollinger_period: 20
+  bollinger_stddev: 2.0
+  # touch | close_back_inside_band
+  entry_mode: "touch"
+  # true: evaluate entries on a completed candle only (recommended).
+  signal_on_closed_candle: true
+  exit:
+    # middle_band | fixed_tp | middle_band_or_tp
+    mode: "fixed_tp"
+
+trading:
+  intraday_mode: true
+  start_time: "09:20"
+  stop_entry_time: "15:00"
+  square_off_time: "15:15"
+  timezone: "Asia/Kolkata"
+  allow_long: true
+  allow_short: false
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  order_type: "MARKET"
+  validity: "DAY"
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+
+position_sizing:
+  # fixed_quantity is implemented. capital_percent and risk_based are reserved.
+  mode: "fixed_quantity"
+  quantity: 1
+
+risk:
+  take_profit:
+    enabled: true
+    # percent | points
+    type: "percent"
+    value: 1.0
+  stop_loss:
+    enabled: true
+    type: "percent"
+    value: 0.5
+  max_trades_per_day: 3
+  # 0 disables the daily-loss halt.
+  max_daily_loss: 2000
+  max_open_positions: 1
+  cooldown_seconds: 300
+
+runtime:
+  polling_seconds: 5
+  order_status_poll_seconds: 2
+  api_retry_attempts: 3
+  api_retry_delay_seconds: 1
+  log_level: "INFO"
+  # Completed candles retained for BB warmup. Keep small for 1 GB RAM.
+  candle_lookback: 100
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N poll cycles.
+  reconcile_every_cycles: 6
+
+safety:
+  # true = never send Dhan orders. false still needs live locks above.
+  dry_run: true
+  kill_switch: false
+  # Spec default: a manual stop does not flatten an open trade.
+  close_positions_on_shutdown: false
+  require_confirmation: false
+  manage_only_configured_symbol: true
+  require_flat_before_entry: true
+  block_if_unexpected_position: true
+
+shutdown:
+  close_positions_on_session_end: true
+  close_positions_on_tp_sl: true
+  close_positions_on_error: false
+  cancel_pending_orders: true
+
+recovery:
+  enabled: true
+  manage_existing_position: true
+  prevent_duplicate_entry: true
+
+cli:
+  enabled: true
+  # Dashboard redraw interval. Does not call Dhan by itself.
+  refresh_seconds: 1
+  event_history_size: 8

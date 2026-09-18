@@ -1,0 +1,115 @@
+# Dhan RSI Reversal — non-secret configuration.
+# Secrets live in .env (DHAN_CLIENT_ID, DHAN_ACCESS_TOKEN).
+#
+# Live trading requires BOTH:
+#   environment.mode: "LIVE"
+#   environment.allow_live_trading: true
+# Otherwise the bot fetches real market data and only simulates orders locally.
+
+environment:
+  # PAPER never sends Dhan orders. LIVE may send real orders.
+  mode: "LIVE"
+  # Second live-trading lock. Must be true together with mode: LIVE.
+  allow_live_trading: true
+
+api:
+  # Environment-variable names that hold Dhan credentials.
+  dhan_client_id_env: "DHAN_CLIENT_ID"
+  dhan_access_token_env: "DHAN_ACCESS_TOKEN"
+
+strategy:
+  name: "RSI Reversal"
+  # Dhan minute intervals: "1" | "5" | "15" | "25" | "60" | "DAY"
+  timeframe: "5"
+  # Wilder RSI lookback. Typical default is 14 completed closes.
+  rsi_period: 14
+  # RSI at or below this is treated as oversold (potential LONG setup).
+  oversold: 30
+  # RSI at or above this is treated as overbought (potential SHORT setup).
+  overbought: 70
+  # true: require RSI to cross back out of the extreme zone.
+  # false: signal while RSI is still inside the extreme zone.
+  use_reversal_confirmation: true
+  # true: also require a bullish/bearish completed candle.
+  use_candle_confirmation: true
+
+trading:
+  exchange_segment: "NSE_EQ"
+  security_id: "2885"
+  trading_symbol: "RELIANCE"
+  # CNC | INTRADAY | MARGIN | MTF for equity. F&O must be INTRADAY or MARGIN.
+  product_type: "INTRADAY"
+  # MARKET or LIMIT. LIMIT is never silently converted to MARKET.
+  order_type: "MARKET"
+  validity: "DAY"
+  quantity: 1
+  # Passed to Dhan historical APIs. EQUITY for NSE_EQ / BSE_EQ.
+  instrument_type: "EQUITY"
+  tick_size: 0.05
+  # OFFSET_PERCENT: buy slightly above LTP, sell slightly below LTP.
+  # ABSOLUTE: use limit_price as the exact LIMIT price.
+  limit_price_mode: "OFFSET_PERCENT"
+  limit_offset_percent: 0.1
+  limit_price: 0
+  allow_long: true
+  allow_short: true
+  max_open_positions: 1
+  one_trade_at_a_time: true
+
+runtime:
+  # Trading API cycle. Independent of cli.refresh_seconds.
+  polling_interval_seconds: 5
+  log_level: "INFO"
+  # Completed candles retained for RSI warmup. Keep small for 1 GB RAM.
+  candle_lookback: 100
+  order_wait_seconds: 90
+  # Compare local state vs Dhan positions every N poll cycles.
+  reconcile_every_cycles: 6
+
+session:
+  # true = day-trading window is enforced.
+  enabled: true
+  start_time: "09:20"
+  stop_time: "15:15"
+  timezone: "Asia/Kolkata"
+  close_all_positions_at_stop_time: true
+
+risk_management:
+  enabled: true
+  take_profit:
+    enabled: true
+    # PERCENT or POINTS
+    type: "PERCENT"
+    value: 1.0
+  stop_loss:
+    enabled: true
+    type: "PERCENT"
+    value: 0.5
+  max_trades_per_day: 1
+  # 0 disables the daily loss/profit halt.
+  max_daily_loss: 0
+  max_daily_profit: 0
+
+shutdown:
+  # Spec default: a manual stop does not flatten an open trade.
+  close_positions_on_manual_stop: false
+  close_positions_on_session_end: true
+  close_positions_on_tp_sl: true
+  close_positions_on_error: false
+  cancel_pending_orders: true
+
+recovery:
+  enabled: true
+  manage_existing_position: true
+  prevent_duplicate_entry: true
+
+safety:
+  manage_only_configured_symbol: true
+  require_flat_before_entry: true
+  block_if_unexpected_position: true
+
+cli:
+  enabled: true
+  # Dashboard redraw interval. Does not call Dhan by itself.
+  refresh_seconds: 1
+  event_history_size: 8
